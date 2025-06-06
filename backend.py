@@ -126,4 +126,40 @@ def obtener_historico_completo():
             })
 
     return datos
-   
+
+@app.get("/historico-alarmas")
+def obtener_historico_alarmas(
+    minutos: int = Query(10, description="Tiempo en minutos hacia atrás para el histórico")
+):
+    rango = f"-{minutos}m"
+
+    query = f'''
+    from(bucket: "{INFLUX_BUCKET}")
+      |> range(start: {rango})
+      |> filter(fn: (r) => r["_measurement"] == "alarmas")
+      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+      |> keep(columns: ["_time", "tipo_fallo", "severidad_iso", "h_rms", "v_rms", "a_rms", "temperatura", "presion", "caudal", "rpm"])
+    '''
+
+    resultado = query_api.query(org=INFLUX_ORG, query=query)
+
+    alarmas = []
+
+    for tabla in resultado:
+        for r in tabla.records:
+            valores = r.values  # Aquí sí puedes tratarlo como un diccionario
+            evento = {
+                "timestamp": r.get_time().isoformat(),
+                "tipo_fallo": valores.get("tipo_fallo"),
+                "severidad_iso": valores.get("severidad_iso"),
+                "h_rms": valores.get("h_rms"),
+                "v_rms": valores.get("v_rms"),
+                "a_rms": valores.get("a_rms"),
+                "temperatura": valores.get("temperatura"),
+                "presion": valores.get("presion"),
+                "caudal": valores.get("caudal"),
+                "rpm": valores.get("rpm"),
+            }
+            alarmas.append(evento)
+
+    return {"alarmas": alarmas}
