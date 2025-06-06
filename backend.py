@@ -6,37 +6,75 @@ import threading
 
 app = FastAPI()
 
-# CORS para permitir acceso desde frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción: usar ["http://localhost:5500"] u origen específico
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Variable para guardar el último dato recibido
-ultimo_dato = {}
+BROKER = "broker.hivemq.com"
+TOPICOS = {
+    "bruto": "mantenimiento/vibraciones4",
+    "fft": "mantenimiento/fft",
+    "estadisticas": "mantenimiento/estadisticas",
+    "modelo": "mantenimiento/mlmodel",
+    "alarmas": "mantenimiento/alarmas"
+}
 
-# Callback MQTT
+# Variables para cada tópico
+bruto_data = {}
+fft_data = {}
+estadisticas_data = {}
+modelo_data = {}
+alarmas_data = {}
+
+# Callback para actualizar los datos
 def on_message(client, userdata, msg):
-    global ultimo_dato
+    global bruto_data, fft_data, estadisticas_data, modelo_data, alarmas_data
     try:
-        data = json.loads(msg.payload.decode())
-        ultimo_dato = data
+        payload = json.loads(msg.payload.decode())
+        if msg.topic == TOPICOS["bruto"]:
+            bruto_data = payload
+        elif msg.topic == TOPICOS["fft"]:
+            fft_data = payload
+        elif msg.topic == TOPICOS["estadisticas"]:
+            estadisticas_data = payload
+        elif msg.topic == TOPICOS["modelo"]:
+            modelo_data = payload
+        elif msg.topic == TOPICOS["alarmas"]:
+            alarmas_data = payload
     except Exception as e:
-        print("❌ Error al procesar mensaje:", e)
+        print(f"❌ Error al procesar mensaje en {msg.topic}:", e)
 
-# Hilo MQTT
+# Suscripción MQTT
 def iniciar_mqtt():
     cliente = mqtt.Client()
     cliente.on_message = on_message
-    cliente.connect("broker.hivemq.com", 1883)
-    cliente.subscribe("mantenimiento/vibraciones4")
+    cliente.connect(BROKER, 1883)
+    for topico in TOPICOS.values():
+        cliente.subscribe(topico)
     cliente.loop_forever()
 
 threading.Thread(target=iniciar_mqtt, daemon=True).start()
 
-# Ruta para que el frontend obtenga los datos
+# Rutas independientes
 @app.get("/datos")
-def obtener_datos():
-    return ultimo_dato
+def get_bruto():
+    return bruto_data
+
+@app.get("/fft")
+def get_fft():
+    return fft_data
+
+@app.get("/estadisticas")
+def get_estadisticas():
+    return estadisticas_data
+
+@app.get("/modelo")
+def get_modelo():
+    return modelo_data
+
+@app.get("/alarmas")
+def get_alarmas():
+    return alarmas_data
