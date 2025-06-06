@@ -3,6 +3,23 @@ from fastapi.middleware.cors import CORSMiddleware
 import paho.mqtt.client as mqtt
 import json
 import threading
+from influxdb_client import InfluxDBClient
+from influxdb_client.client.query_api import QueryApi
+from fastapi import Query
+from datetime import datetime
+
+# 🔐 Datos de tu cuenta InfluxDB Cloud
+INFLUX_URL = "https://us-east-1-1.aws.cloud2.influxdata.com"
+INFLUX_TOKEN = "o_WFeAGE0ekUqHp91shE0EyT6_BihlPkYyyQkOBjU9jdkYREUtTgLHVd3RmYXWVlQDdNEw0ve3BVLrk0DHElzQ=="
+INFLUX_ORG = "Student"
+INFLUX_BUCKET = "finalproject"
+
+client_influx = InfluxDBClient(
+    url=INFLUX_URL,
+    token=INFLUX_TOKEN,
+    org=INFLUX_ORG
+)
+query_api = client_influx.query_api()
 
 app = FastAPI()
 
@@ -78,3 +95,35 @@ def get_modelo():
 @app.get("/alarmas")
 def get_alarmas():
     return alarmas_data
+
+
+@app.get("/historico")
+def obtener_historico_completo():
+    rango = "-4m"
+
+    query = f'''
+    from(bucket: "{INFLUX_BUCKET}")
+      |> range(start: {rango})
+      |> filter(fn: (r) => r["_measurement"] == "estadisticas")
+      |> keep(columns: ["_time", "_field", "_value"])
+    '''
+
+    resultado = query_api.query(org=INFLUX_ORG, query=query)
+
+    datos = {}
+
+    for tabla in resultado:
+        for r in tabla.records:
+            variable = r.get_field()
+            timestamp = r.get_time().isoformat()
+            valor = r.get_value()
+
+            if variable not in datos:
+                datos[variable] = []
+            datos[variable].append({
+                "timestamp": timestamp,
+                "valor": valor
+            })
+
+    return datos
+   
